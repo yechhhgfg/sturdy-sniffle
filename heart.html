@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>爱心动画网页</title>
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at top, #1b0b2b 0%, #000 70%);
+            font-family: "Microsoft YaHei", Arial, sans-serif;
+            color: #fff;
+        }
+
+        .container {
+            text-align: center;
+            padding: 24px;
+            width: min(100%, 700px);
+        }
+
+        h1 {
+            margin: 0 0 12px;
+            font-size: clamp(20px, 4vw, 28px);
+            letter-spacing: 1.5px;
+        }
+
+        p {
+            margin: 0 0 18px;
+            color: #e0b7d8;
+            line-height: 1.6;
+            font-size: clamp(14px, 3.5vw, 18px);
+        }
+
+        .button {
+            display: inline-block;
+            margin-top: 18px;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 999px;
+            background: #fd738f;
+            color: #fff;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 24px rgba(253, 121, 143, 0.25);
+        }
+
+        canvas {
+            width: min(100%, 640px);
+            height: auto;
+            border-radius: 16px;
+            box-shadow: 0 0 30px rgba(253, 121, 143, 0.35);
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>爱心动画网页版</h1>
+        <p></p>
+        <canvas id="heartCanvas" width="640" height="640"></canvas>
+        <!-- <button class="button" id="saveButton" type="button">保存为图片</button> -->
+    </div>
+
+    <script>
+        const CANVAS_WIDTH = 640;
+        const CANVAS_HEIGHT = 640;
+        const CANVAS_CENTER_X = CANVAS_WIDTH / 2;
+        const CANVAS_CENTER_Y = CANVAS_HEIGHT / 2;
+        const IMAGE_ENLARGE = 11;
+        const HEART_COLOR = "#fd798f";
+
+        const canvas = document.getElementById("heartCanvas");
+        const ctx = canvas.getContext("2d");
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = CANVAS_WIDTH * dpr;
+        canvas.height = CANVAS_HEIGHT * dpr;
+        canvas.style.width = `${CANVAS_WIDTH}px`;
+        canvas.style.height = `${CANVAS_HEIGHT}px`;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+
+        function randomUniform(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function randomInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        function heartFunction(t, shrinkRatio = IMAGE_ENLARGE) {
+            let x = 16 * Math.pow(Math.sin(t), 3);
+            let y = -(15 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(3 * t));
+            x *= shrinkRatio;
+            y *= shrinkRatio;
+            x += CANVAS_CENTER_X;
+            y += CANVAS_CENTER_Y;
+            return { x: parseInt(x, 10), y: parseInt(y, 10) };
+        }
+
+        function scatterInside(x, y, beta = 0.15) {
+            const ratioX = -beta * Math.log(Math.random());
+            const ratioY = -beta * Math.log(Math.random());
+            const dx = ratioX * (x - CANVAS_CENTER_X);
+            const dy = ratioY * (y - CANVAS_CENTER_Y);
+            return { x: x - dx, y: y - dy };
+        }
+
+        function shrink(x, y, ratio) {
+            const force = -1 / Math.pow(((x - CANVAS_CENTER_X) ** 2 + (y - CANVAS_CENTER_Y) ** 2), 0.6);
+            const dx = ratio * force * (x - CANVAS_CENTER_X);
+            const dy = ratio * force * (y - CANVAS_CENTER_Y);
+            return { x: x - dx, y: y - dy };
+        }
+
+        function curve(p) {
+            return 2 * (2 * Math.sin(4 * p) / (2 * Math.PI));
+        }
+
+        class Heart {
+            constructor(generateFrame = 20) {
+                this._points = new Set();
+                this._edgeDiffusionPoints = new Set();
+                this._centerDiffusionPoints = new Set();
+                this.allPoints = {};
+                this.build(2000);
+
+                this.randomHalo = 1000;
+                this.generateFrame = generateFrame;
+                for (let frame = 0; frame < generateFrame; frame += 1) {
+                    this.calc(frame);
+                }
+            }
+
+            addPoint(setRef, x, y) {
+                setRef.add(`${x},${y}`);
+            }
+
+            parsePoint(key) {
+                const [x, y] = key.split(",").map(Number);
+                return { x, y };
+            }
+
+            build(number) {
+                for (let i = 0; i < number; i += 1) {
+                    const t = randomUniform(0, 2 * Math.PI);
+                    const point = heartFunction(t);
+                    this.addPoint(this._points, point.x, point.y);
+                }
+
+                for (const key of Array.from(this._points)) {
+                    const { x, y } = this.parsePoint(key);
+                    for (let i = 0; i < 3; i += 1) {
+                        const point = scatterInside(x, y, 0.05);
+                        this.addPoint(this._edgeDiffusionPoints, parseInt(point.x, 10), parseInt(point.y, 10));
+                    }
+                }
+
+                const pointList = Array.from(this._points);
+                for (let i = 0; i < 4000; i += 1) {
+                    const key = pointList[randomInt(0, pointList.length - 1)];
+                    const { x, y } = this.parsePoint(key);
+                    const point = scatterInside(x, y, 0.17);
+                    this.addPoint(this._centerDiffusionPoints, parseInt(point.x, 10), parseInt(point.y, 10));
+                }
+            }
+
+            calcPosition(x, y, ratio) {
+                const force = 1 / Math.pow(((x - CANVAS_CENTER_X) ** 2 + (y - CANVAS_CENTER_Y) ** 2), 0.420);
+                const dx = ratio * force * (x - CANVAS_CENTER_X) + randomInt(-1, 1);
+                const dy = ratio * force * (y - CANVAS_CENTER_Y) + randomInt(-1, 1);
+                return { x: x - dx, y: y - dy };
+            }
+
+            calc(generateFrame) {
+                const ratio = 10 * curve(generateFrame / 10 * Math.PI);
+                const haloRadius = Math.floor(4 + 6 * (1 + curve(generateFrame / 10 * Math.PI)));
+                const haloNumber = Math.floor(3000 + 4000 * Math.abs(Math.pow(curve(generateFrame / 10 * Math.PI), 2)));
+
+                const allPoints = [];
+                const heartHaloPoint = new Set();
+
+                for (let i = 0; i < haloNumber; i += 1) {
+                    const t = randomUniform(0, 2 * Math.PI);
+                    let point = heartFunction(t, 11.6);
+                    point = shrink(point.x, point.y, haloRadius);
+                    const key = `${parseInt(point.x, 10)},${parseInt(point.y, 10)}`;
+                    if (!heartHaloPoint.has(key)) {
+                        heartHaloPoint.add(key);
+                        const x = parseInt(point.x, 10) + randomInt(-16, 16);
+                        const y = parseInt(point.y, 10) + randomInt(-16, 16);
+                        const size = [2, 2, 1][randomInt(0, 2)];
+                        allPoints.push({ x, y, size });
+                    }
+                }
+
+                for (const key of this._points) {
+                    const { x, y } = this.parsePoint(key);
+                    const position = this.calcPosition(x, y, ratio);
+                    const size = randomInt(1, 2);
+                    allPoints.push({ x: position.x, y: position.y, size });
+                }
+
+                for (const key of this._edgeDiffusionPoints) {
+                    const { x, y } = this.parsePoint(key);
+                    const position = this.calcPosition(x, y, ratio);
+                    const size = randomInt(1, 2);
+                    allPoints.push({ x: position.x, y: position.y, size });
+                }
+
+                for (const key of this._centerDiffusionPoints) {
+                    const { x, y } = this.parsePoint(key);
+                    const position = this.calcPosition(x, y, ratio);
+                    const size = randomInt(1, 2);
+                    allPoints.push({ x: position.x, y: position.y, size });
+                }
+
+                this.allPoints[generateFrame] = allPoints;
+            }
+
+            render(ctx, renderFrame) {
+                const points = this.allPoints[renderFrame % this.generateFrame];
+                if (!points) {
+                    return;
+                }
+                ctx.fillStyle = HEART_COLOR;
+                ctx.save();
+                ctx.globalCompositeOperation = "source-over";
+                for (const point of points) {
+                    ctx.fillRect(point.x, point.y, point.size, point.size);
+                }
+                ctx.restore();
+            }
+        }
+
+        const heart = new Heart();
+        let frame = 0;
+        let lastFrameTime = performance.now();
+        const FRAME_INTERVAL = 160;
+
+        function draw(timestamp) {
+            if (timestamp - lastFrameTime >= FRAME_INTERVAL) {
+                lastFrameTime = timestamp;
+                ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                heart.render(ctx, frame);
+                frame += 1;
+            }
+            requestAnimationFrame(draw);
+        }
+
+        function resizeCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            const displayWidth = Math.min(window.innerWidth - 32, CANVAS_WIDTH);
+            canvas.width = CANVAS_WIDTH * dpr;
+            canvas.height = CANVAS_HEIGHT * dpr;
+            canvas.style.width = `${displayWidth}px`;
+            canvas.style.height = "auto";
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        window.addEventListener("resize", resizeCanvas);
+        resizeCanvas();
+        requestAnimationFrame(draw);
+
+        const saveButton = document.getElementById("saveButton");
+        if (saveButton) {
+            saveButton.addEventListener("click", () => {
+                const link = document.createElement("a");
+                link.href = canvas.toDataURL("image/png");
+                link.download = "heart-snapshot.png";
+                link.click();
+            });
+        }
+    </script>
+</body>
+</html>
